@@ -4,11 +4,17 @@ use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::time::Duration;
 
+extern crate server;
+use server::ThreadPool;
+
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
+    let pool = ThreadPool::new(4);
+
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        thread::spawn(|| {
+
+        pool.execute(|| {
             handle_connection(stream);
         });
     }
@@ -17,7 +23,7 @@ fn main() {
 fn handle_connection(mut stream: TcpStream) {
     let mut buf = [0; 1024];
     stream.read(&mut buf).unwrap();
-    println!("Request: {}", String::from_utf8_lossy(&buf));
+    // println!("Request: {}", String::from_utf8_lossy(&buf));
 
     let get = b"GET / HTTP/1.1\r\n";
     let sleep = b"GET /sleep HTTP/1.1\r\n";
