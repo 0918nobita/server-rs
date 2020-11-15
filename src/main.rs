@@ -2,6 +2,7 @@ use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::time::Duration;
+use sha1::{Sha1, Digest};
 
 extern crate server;
 use server::thread_pool::ThreadPool;
@@ -11,6 +12,9 @@ const INDEX_HTML: &'static [u8] = include_bytes!("../index.html");
 const NOT_FOUND_HTML: &'static [u8] = include_bytes!("../404.html");
 
 fn main() {
+    let result = Sha1::digest(b"Hello, world");
+    println!("{:x}", result);
+
     let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
     let pool = ThreadPool::new(4);
 
