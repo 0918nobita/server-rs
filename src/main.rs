@@ -101,13 +101,22 @@ fn receive_ws_messages(stream: &mut TcpStream) {
             if msg_buf[0] == 0 {
                 break;
             }
-            let payload_length = (msg_buf[1] - 128) as usize;
-            let mask: Vec<u8> = msg_buf[2..=5].to_vec();
-            let mut payload = Vec::<u8>::with_capacity(payload_length);
-            for i in 0..payload_length {
-                payload.push(msg_buf[6 + i] ^ mask[i % 4]);
+            let opcode = msg_buf[0] % 16;
+            if opcode == 1 {
+                let payload_length = (msg_buf[1] % 128) as usize;
+                let mask: Vec<u8> = msg_buf[2..=5].to_vec();
+                let mut payload = Vec::<u8>::with_capacity(payload_length);
+                for i in 0..payload_length {
+                    payload.push(msg_buf[6 + i] ^ mask[i % 4]);
+                }
+                println!("Received: {}", String::from_utf8(payload).unwrap().trim());
+            } else if opcode == 9 {
+                println!("Pong");
+                stream.write(&[138, 0]).unwrap();
+                stream.flush().unwrap();
+            } else {
+                eprintln!("Unsupported opcode {}; ignoring.", opcode);
             }
-            println!("Received: {}", String::from_utf8(payload).unwrap().trim());
         } else {
             break;
         }
