@@ -36,62 +36,80 @@ fn handle_connection(mut stream: TcpStream) {
     let websocket = b"GET /websocket HTTP/1.1\r\n";
 
     if buf.starts_with(get_index) {
-        let response = format!(
-            "HTTP/1.1 200 OK\r\n\r\n{}",
-            String::from_utf8_lossy(INDEX_HTML)
-        );
-        stream.write(response.as_bytes()).unwrap();
-        stream.flush().unwrap();
+        index_page(&mut stream);
     } else if buf.starts_with(sleep) {
         thread::sleep(Duration::from_secs(5));
-        let response = format!(
-            "HTTP/1.1 200 OK\r\n\r\n{}",
-            String::from_utf8_lossy(INDEX_HTML)
-        );
-        stream.write(response.as_bytes()).unwrap();
-        stream.flush().unwrap();
+        index_page(&mut stream);
     } else if buf.starts_with(websocket) {
-        let regex = Regex::new("Sec-WebSocket-Key: (.*)").unwrap();
-
-        if let Some(caps) = regex.captures(&buf) {
-            println!("opening handshake received");
-
-            let key = String::from(String::from_utf8_lossy(caps.get(1).unwrap().as_bytes()).trim())
-                + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-            let hash = base64::encode(Sha1::digest(key.as_bytes()));
-
-            let response = format!(
-                "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: {}\r\n\r\n",
-                hash
-            );
-            stream.write(response.as_bytes()).unwrap();
-            stream.flush().unwrap();
-
-            loop {
-                let mut msg_buf = [0; 1024];
-                if let Ok(_) = stream.read(&mut msg_buf) {
-                    if msg_buf[0] == 0 {
-                        break;
-                    }
-                    println!("message received");
-                } else {
-                    break;
-                }
-            }
+        if let Some(key) = parse_ws_key(&buf) {
+            send_back_handshake(&mut stream, key);
+            receive_ws_messages(&mut stream);
         } else {
-            let response = format!(
-                "HTTP/1.1 404 NOT FOUND\r\n\r\n{}",
-                String::from_utf8_lossy(NOT_FOUND_HTML)
-            );
-            stream.write(response.as_bytes()).unwrap();
-            stream.flush().unwrap();
+            not_found_page(&mut stream);
         }
     } else {
-        let response = format!(
-            "HTTP/1.1 404 NOT FOUND\r\n\r\n{}",
-            String::from_utf8_lossy(NOT_FOUND_HTML)
-        );
-        stream.write(response.as_bytes()).unwrap();
-        stream.flush().unwrap();
+        not_found_page(&mut stream);
+    }
+}
+
+fn index_page(stream: &mut TcpStream) {
+    let response = format!(
+        "HTTP/1.1 200 OK\r\n\r\n{}",
+        String::from_utf8_lossy(INDEX_HTML)
+    );
+    stream.write(response.as_bytes()).unwrap();
+    stream.flush().unwrap();
+}
+
+fn not_found_page(stream: &mut TcpStream) {
+    let response = format!(
+        "HTTP/1.1 404 NOT FOUND\r\n\r\n{}",
+        String::from_utf8_lossy(NOT_FOUND_HTML)
+    );
+    stream.write(response.as_bytes()).unwrap();
+    stream.flush().unwrap();
+}
+
+fn parse_ws_key<'a>(headers: &'a [u8]) -> Option<String> {
+    let regex = Regex::new("Sec-WebSocket-Key: (.*)").unwrap();
+    regex
+        .captures(headers)
+        .and_then(|caps| caps.get(1))
+        .map(|m| String::from(String::from_utf8_lossy(m.as_bytes()).trim()))
+}
+
+fn send_back_handshake(stream: &mut TcpStream, key: String) {
+    let key = key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    let hash = base64::encode(Sha1::digest(key.as_bytes()));
+
+    let response = format!(
+        "HTTP/1.1 101 Switching Protocols\r\n\
+         Connection: Upgrade\r\n\
+         Upgrade: websocket\r\n\
+         Sec-WebSocket-Accept: {}\r\n\r\n",
+        hash
+    );
+
+    stream.write(response.as_bytes()).unwrap();
+    stream.flush().unwrap();
+}
+
+fn receive_ws_messages(stream: &mut TcpStream) {
+    loop {
+        let mut msg_buf = [0; 1024];
+        if stream.read(&mut msg_buf).is_ok() {
+            if msg_buf[0] == 0 {
+                break;
+            }
+            let payload_length = (msg_buf[1] - 128) as usize;
+            let mask: Vec<u8> = msg_buf[2..=5].to_vec();
+            let mut payload = Vec::<u8>::with_capacity(payload_length);
+            for i in 0..payload_length {
+                payload.push(msg_buf[6 + i] ^ mask[i % 4]);
+            }
+            println!("Received: {}", String::from_utf8(payload).unwrap().trim());
+        } else {
+            break;
+        }
     }
 }

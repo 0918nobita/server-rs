@@ -16,7 +16,10 @@ impl Worker {
             match message {
                 Message::NewJob(job) => {
                     println!("Worker {} got a job; executing.", id);
+
                     job.call_box();
+
+                    println!("Worker {} completed its job.", id);
                 }
                 Message::Terminate => {
                     println!("Worker {} was told to terminate.", id);
